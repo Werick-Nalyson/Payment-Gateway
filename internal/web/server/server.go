@@ -6,19 +6,22 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/werick-nalyson/payment-gateway/internal/service"
 	"github.com/werick-nalyson/payment-gateway/internal/web/handlers"
+	"github.com/werick-nalyson/payment-gateway/internal/web/middlewares"
 )
 
 type Server struct {
 	router         *chi.Mux
 	server         *http.Server
 	accountService *service.AccountService
+	invoiceService *service.InvoiceService
 	port           string
 }
 
-func NewServer(accountService *service.AccountService, port string) *Server {
+func NewServer(accountService *service.AccountService, invoiceService *service.InvoiceService, port string) *Server {
 	return &Server{
 		router:         chi.NewRouter(),
 		accountService: accountService,
+		invoiceService: invoiceService,
 		port:           port,
 	}
 }
@@ -26,8 +29,18 @@ func NewServer(accountService *service.AccountService, port string) *Server {
 func (s *Server) ConfigureRoutes() {
 	accountHandler := handlers.NewAccountHandler(s.accountService)
 
+	invoiceHandler := handlers.NewInvoiceHandler(s.invoiceService)
+	authMiddleware := middlewares.NewAuthMiddleware(s.accountService)
+
 	s.router.Post("/accounts", accountHandler.Create)
 	s.router.Get("/accounts", accountHandler.Get)
+
+	s.router.Group(func(r chi.Router) {
+		r.Use(authMiddleware.Authenticate)
+		s.router.Post("/invoice", invoiceHandler.Create)
+		s.router.Get("/invoice/{id}", invoiceHandler.GetByID)
+		s.router.Get("/invoice", invoiceHandler.ListByAccount)
+	})
 }
 
 func (s *Server) Start() error {
